@@ -149,7 +149,7 @@ export default function Home() {
     setCategoriasAbertas((prev) => {
       if (Object.keys(prev).length > 0) return prev;
       const next: Record<string, boolean> = {};
-      for (const it of rows.filter((r) => (r.aba ?? "lista") === "lista")) next[it.categoria] = true;
+      for (const it of rows.filter((r) => (r.aba ?? "lista") === "lista")) next[it.categoria] = false;
       return next;
     });
 
