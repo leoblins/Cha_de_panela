@@ -14,7 +14,6 @@ type ItemCha = {
   imagem_url: string | null;
   status: "disponivel" | "comprado" | string;
 
-  // NOVOS
   comprador_nome?: string | null;
   repetivel?: boolean;
   aba?: "lista" | "pix" | string;
@@ -97,18 +96,27 @@ export default function Home() {
   const [pixItem, setPixItem] = useState<ItemCha | null>(null);
   const [copiado, setCopiado] = useState(false);
 
-  // Para Pix valor livre
+  // Pix valor livre
   const [pixValorLivre, setPixValorLivre] = useState<string>("");
 
-  // Fluxo "comprar/pix" -> identificar
+  // Confirmação
   const [confirmItem, setConfirmItem] = useState<ItemCha | null>(null);
   const [confirmLoading, setConfirmLoading] = useState(false);
 
+  // Identificação
   const [identifyOpen, setIdentifyOpen] = useState(false);
   const [identifyNome, setIdentifyNome] = useState("");
-  const [identifySkipping, setIdentifySkipping] = useState(false);
+  const [identifySaving, setIdentifySaving] = useState(false);
 
-  // Contexto: o que vamos registrar quando confirmar?
+  // QR responsivo (sem window no JSX)
+  const [qrSize, setQrSize] = useState(220);
+  useEffect(() => {
+    const update = () => setQrSize(window.innerWidth < 420 ? 180 : 220);
+    update();
+    window.addEventListener("resize", update);
+    return () => window.removeEventListener("resize", update);
+  }, []);
+
   const [pendingAction, setPendingAction] = useState<
     | { kind: "comprar_item"; item: ItemCha }
     | { kind: "pix_item"; item: ItemCha; valor: number }
@@ -138,7 +146,6 @@ export default function Home() {
     const rows = (data ?? []) as ItemCha[];
     setItens(rows);
 
-    // abre categorias na primeira carga (só da aba atual)
     setCategoriasAbertas((prev) => {
       if (Object.keys(prev).length > 0) return prev;
       const next: Record<string, boolean> = {};
@@ -153,7 +160,6 @@ export default function Home() {
     carregar();
   }, []);
 
-  // Filtra itens pela aba
   const itensDaAba = useMemo(() => {
     return itens.filter((it) => ((it.aba ?? "lista") as TabKey) === tab);
   }, [itens, tab]);
@@ -175,13 +181,11 @@ export default function Home() {
       map.get(it.categoria)!.push(it);
     }
 
-    // Ordenação: itens comprados vão pro fim, EXCETO repetíveis (pix) — que nunca “some”
     for (const [cat, arr] of map.entries()) {
       arr.sort((a, b) => {
         const aRep = !!a.repetivel;
         const bRep = !!b.repetivel;
 
-        // repetíveis primeiro (pra Pix ficar sempre “disponível”)
         if (aRep !== bRep) return aRep ? -1 : 1;
 
         const aCompr = a.status === "comprado" ? 1 : 0;
@@ -217,9 +221,6 @@ export default function Home() {
     }
   }
 
-  // ====== Ações ======
-
-  // 1) Itens normais: marcar como comprado (e opcionalmente salvar nome)
   async function efetivarCompraItem(item: ItemCha, nome: string | null) {
     setConfirmLoading(true);
 
@@ -240,7 +241,6 @@ export default function Home() {
     );
   }
 
-  // 2) Pix (repetível ou não): registrar contribuição
   async function registrarPix(itemId: string | null, valor: number, nome: string | null) {
     const { error } = await supabase.from("pix_contribuicoes").insert({
       item_id: itemId,
@@ -254,55 +254,30 @@ export default function Home() {
     }
   }
 
-  // Fecha todos modais de fluxo
-  function resetIdentifyFlow() {
-    setIdentifyOpen(false);
-    setIdentifyNome("");
-    setIdentifySkipping(false);
-    setPendingAction(null);
-  }
-
-  // Abre modal de identificação (Sim/Não)
   function abrirIdentificacao(action: NonNullable<typeof pendingAction>) {
     setPendingAction(action);
     setIdentifyOpen(true);
     setIdentifyNome("");
-    setIdentifySkipping(false);
   }
 
-  // Confirmar (Sim) do modal “Você comprou?”
-  function confirmarAcaoPrincipal(item: ItemCha) {
-    // Se for repetível, não marca comprado: vai só registrar Pix (normalmente)
-    // Mas aqui “Já comprei” é para itens da LISTA (não repetíveis).
-    abrirIdentificacao({ kind: "comprar_item", item });
-  }
-
-  // Confirmar “Já fiz o Pix” no modal Pix
-  function confirmarPixDoItem(item: ItemCha, valor: number) {
-    abrirIdentificacao({ kind: "pix_item", item, valor });
-  }
-
-  // Confirmar Pix valor livre
-  function confirmarPixLivre(valor: number) {
-    abrirIdentificacao({ kind: "pix_livre", valor });
+  function resetIdentifyFlow() {
+    setIdentifyOpen(false);
+    setIdentifyNome("");
+    setPendingAction(null);
   }
 
   async function finalizarComNomeOuNao(nome: string | null) {
     if (!pendingAction) return;
 
-    // trava botões do modal
-    setIdentifySkipping(true);
-
+    setIdentifySaving(true);
     try {
       if (pendingAction.kind === "comprar_item") {
         await efetivarCompraItem(pendingAction.item, nome);
       }
 
       if (pendingAction.kind === "pix_item") {
-        // sempre registra contribuição
         await registrarPix(pendingAction.item.id, pendingAction.valor, nome);
 
-        // se NÃO for repetível, podemos marcar como comprado também (opcional)
         const rep = !!pendingAction.item.repetivel;
         if (!rep) {
           await efetivarCompraItem(pendingAction.item, nome);
@@ -315,18 +290,13 @@ export default function Home() {
 
       resetIdentifyFlow();
     } finally {
-      setIdentifySkipping(false);
+      setIdentifySaving(false);
     }
   }
 
-  // ===== UI: responsivo =====
-  // grid já estava bom, mas melhoramos pro mobile:
-  // - 1 coluna em telas bem pequenas
-  // - QR menor em telas pequenas
-
   return (
     <main className="relative min-h-screen">
-      {/* FUNDO com blur */}
+      {/* FUNDO */}
       <div
         className="fixed inset-0 -z-10"
         style={{
@@ -349,12 +319,12 @@ export default function Home() {
 
         {/* TABS */}
         <div className="mx-auto mb-4 sm:mb-6 max-w-3xl">
-          <div className="grid grid-cols-2 rounded-2xl bg-white/80 p-1 shadow backdrop-blur">
+          <div className="grid grid-cols-2 rounded-2xl bg-white/95 p-1 shadow backdrop-blur">
             <button
               onClick={() => setTab("lista")}
               className={[
                 "rounded-xl py-2 text-sm font-semibold",
-                tab === "lista" ? "bg-black text-white" : "text-gray-700 hover:bg-white/70",
+                tab === "lista" ? "bg-black text-white" : "text-gray-900 hover:bg-gray-100",
               ].join(" ")}
             >
               Lista de itens
@@ -363,7 +333,7 @@ export default function Home() {
               onClick={() => setTab("pix")}
               className={[
                 "rounded-xl py-2 text-sm font-semibold",
-                tab === "pix" ? "bg-black text-white" : "text-gray-700 hover:bg-white/70",
+                tab === "pix" ? "bg-black text-white" : "text-gray-900 hover:bg-gray-100",
               ].join(" ")}
             >
               Para não dizer que não dei nada
@@ -371,13 +341,13 @@ export default function Home() {
           </div>
         </div>
 
-        {/* BUSCA (só faz sentido na lista, mas pode deixar nas duas) */}
+        {/* BUSCA */}
         <div className="mx-auto mb-6 sm:mb-8 max-w-3xl">
           <input
             value={busca}
             onChange={(e) => setBusca(e.target.value)}
             placeholder={tab === "pix" ? "Buscar (Pix)..." : "Buscar item..."}
-            className="w-full rounded-xl bg-white/90 px-4 py-3 text-sm shadow outline-none focus:ring-2 focus:ring-white/50"
+            className="w-full rounded-xl bg-white/95 px-4 py-3 text-sm shadow outline-none focus:ring-2 focus:ring-white/60 text-gray-900 placeholder:text-gray-500"
           />
         </div>
 
@@ -386,13 +356,13 @@ export default function Home() {
           <div className="rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-700">Erro: {erro}</div>
         )}
 
-        {/* A BAIXO: Aba PIX ainda tem o card “valor livre” (não precisa estar no banco) */}
+        {/* PIX LIVRE */}
         {tab === "pix" && (
-          <section className="mb-6 rounded-2xl bg-white/90 shadow-lg backdrop-blur">
+          <section className="mb-6 rounded-2xl bg-white/95 shadow-lg backdrop-blur">
             <div className="px-5 py-4 border-b border-gray-200">
-              <h2 className="text-lg font-semibold">Pix de valor livre</h2>
-              <p className="text-xs text-gray-600 mt-1">
-                Escolha qualquer valor.
+              <h2 className="text-lg font-semibold text-gray-900">Pix de valor livre</h2>
+              <p className="text-xs text-gray-700 mt-1">
+                Escolha qualquer valor (não some, pode ser usado por várias pessoas).
               </p>
             </div>
 
@@ -402,8 +372,8 @@ export default function Home() {
                   value={pixValorLivre}
                   onChange={(e) => setPixValorLivre(e.target.value)}
                   inputMode="decimal"
-                  placeholder="Ex: 50.00"
-                  className="w-full sm:w-56 rounded-xl border border-gray-200 bg-white px-3 py-3 text-sm outline-none focus:border-gray-400"
+                  placeholder="Ex: 35.00"
+                  className="w-full sm:w-56 rounded-xl border border-gray-200 bg-white px-3 py-3 text-sm outline-none focus:border-gray-400 text-gray-900 placeholder:text-gray-500"
                 />
                 <button
                   onClick={() => {
@@ -412,7 +382,6 @@ export default function Home() {
                       alert("Digite um valor válido. Ex: 35.00");
                       return;
                     }
-                    // abre modal pix com “item fake” só pra mostrar QR
                     setPixItem({
                       id: "pix-livre",
                       categoria: "Pix livre",
@@ -431,7 +400,7 @@ export default function Home() {
                   Gerar Pix
                 </button>
               </div>
-             
+              <p className="mt-2 text-xs text-gray-700">Use ponto ou vírgula (ex: 35.00 ou 35,00).</p>
             </div>
           </section>
         )}
@@ -440,17 +409,14 @@ export default function Home() {
         <div className="space-y-6">
           {[...porCategoria.entries()].map(([cat, lista]) => {
             const aberta = categoriasAbertas[cat] ?? true;
-
-            // na aba pix você pode preferir sempre aberto:
             const isPixTab = tab === "pix";
             const abertaFinal = isPixTab ? true : aberta;
 
             return (
-              <section key={cat} className="rounded-2xl bg-white/90 shadow-lg backdrop-blur">
-                {/* Header + botão minimizar (na aba pix deixo sem botão) */}
+              <section key={cat} className="rounded-2xl bg-white/95 shadow-lg backdrop-blur">
                 <div className="flex w-full items-center justify-between px-5 py-4">
                   <div className="text-left">
-                    <h2 className="text-lg font-semibold">
+                    <h2 className="text-lg font-semibold text-gray-900">
                       {cat} ({lista.length})
                     </h2>
                   </div>
@@ -458,7 +424,7 @@ export default function Home() {
                   {!isPixTab && (
                     <button
                       onClick={() => toggleCategoria(cat)}
-                      className="text-xl font-bold text-gray-700 w-10 h-10 rounded-xl hover:bg-black/5"
+                      className="text-xl font-bold text-gray-900 w-10 h-10 rounded-xl hover:bg-black/5"
                       aria-label="Abrir/fechar categoria"
                     >
                       {aberta ? "−" : "+"}
@@ -468,13 +434,11 @@ export default function Home() {
 
                 {abertaFinal && (
                   <div className="px-4 sm:px-5 pb-5">
-                    {/* 1 coluna em mobile bem pequeno */}
-                    <div className="grid grid-cols-1 min-[420px]:grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-4">
+                    {/* ✅ MOBILE MELHOR: 2 por linha, 3 em telas maiores */}
+                    <div className="grid grid-cols-2 min-[480px]:grid-cols-3 gap-3 sm:gap-4 sm:grid-cols-3 lg:grid-cols-4">
                       {lista.map((it) => {
                         const repetivel = !!it.repetivel;
                         const comprado = it.status === "comprado";
-
-                        // regra: na aba pix (repetível) nunca apaga
                         const desabilitar = tab === "pix" ? false : comprado;
 
                         return (
@@ -482,54 +446,55 @@ export default function Home() {
                             key={it.id}
                             className={[
                               "overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-sm",
-                              // só deixa cinza quando não é repetível
-                              !repetivel && comprado ? "opacity-60" : "opacity-100",
+                              !repetivel && comprado ? "opacity-70" : "opacity-100",
                             ].join(" ")}
                           >
-                            {/* IMAGEM quadrada */}
                             <div className="aspect-square w-full bg-gray-100">
                               {it.imagem_url ? (
                                 <img src={it.imagem_url} alt={it.nome} className="h-full w-full object-cover" />
                               ) : (
-                                <div className="flex h-full w-full items-center justify-center text-xs text-gray-500">
+                                <div className="flex h-full w-full items-center justify-center text-xs text-gray-600">
                                   Sem imagem
                                 </div>
                               )}
                             </div>
 
-                            <div className="p-3">
-                              <div className="min-h-[40px]">
-                                <p className="text-sm font-semibold leading-snug">{it.nome}</p>
+                            {/* ✅ card mais compacto no mobile */}
+                            <div className="p-2 sm:p-3">
+                              <div className="min-h-[34px]">
+                                <p className="text-[13px] sm:text-sm font-semibold leading-snug text-gray-900">
+                                  {it.nome}
+                                </p>
                               </div>
 
-                              <div className="mt-2 flex items-center justify-between">
-                                <p className="text-sm font-medium">{formatBRL(it.preco_sugerido)}</p>
+                              <div className="mt-2 flex items-start justify-between gap-2">
+                                <p className="text-[12px] sm:text-sm font-semibold text-gray-900">
+                                  {formatBRL(it.preco_sugerido)}
+                                </p>
 
-                                {/* status + (se comprado e tiver nome) mostra nome */}
                                 {repetivel ? (
-                                  <p className="text-xs font-medium text-gray-600">✨ Pix</p>
+                                  <p className="text-[11px] sm:text-xs font-semibold text-gray-800">✨ Pix</p>
                                 ) : (
                                   <div className="text-right">
-                                    <p className="text-xs font-medium text-gray-600">
+                                    <p className="text-[11px] sm:text-xs font-semibold text-gray-800">
                                       {comprado ? "😊 Comprado" : "😢 Não comprado"}
                                     </p>
                                     {comprado && it.comprador_nome ? (
-                                      <p className="text-[11px] text-gray-500">por {it.comprador_nome}</p>
+                                      <p className="text-[11px] text-gray-700">por {it.comprador_nome}</p>
                                     ) : null}
                                   </div>
                                 )}
                               </div>
 
-                              {/* BOTÕES */}
+                              {/* ✅ botões menores no mobile */}
                               <div className="mt-3 grid grid-cols-2 gap-2">
-                                {/* Comprar só faz sentido na lista normal */}
                                 {tab === "lista" ? (
                                   <a
                                     href={it.link_compra ?? "#"}
                                     target="_blank"
                                     rel="noreferrer"
                                     className={[
-                                      "rounded-lg px-2 py-2 text-center text-xs font-medium",
+                                      "rounded-lg px-2 py-1.5 text-center text-[11px] sm:text-xs font-semibold",
                                       desabilitar || !it.link_compra
                                         ? "pointer-events-none bg-gray-100 text-gray-400"
                                         : "bg-black text-white hover:opacity-90",
@@ -538,27 +503,25 @@ export default function Home() {
                                     Comprar
                                   </a>
                                 ) : (
-                                  <div className="rounded-lg bg-gray-100 text-gray-400 text-center text-xs font-medium px-2 py-2">
+                                  <div className="rounded-lg bg-gray-100 text-gray-500 text-center text-[11px] sm:text-xs font-semibold px-2 py-1.5">
                                     Pix
                                   </div>
                                 )}
 
                                 <button
                                   type="button"
-                                  disabled={false}
-                                  className="rounded-lg px-2 py-2 text-xs font-medium bg-blue-600 text-white hover:opacity-90"
+                                  className="rounded-lg px-2 py-1.5 text-[11px] sm:text-xs font-semibold bg-blue-600 text-white hover:opacity-90"
                                   onClick={() => setPixItem(it)}
                                 >
                                   Pix
                                 </button>
 
-                                {/* Já comprei: na aba pix vira “Confirmar Pix” */}
                                 {tab === "lista" ? (
                                   <button
                                     type="button"
                                     disabled={desabilitar}
                                     className={[
-                                      "col-span-2 rounded-lg px-2 py-2 text-xs font-semibold",
+                                      "col-span-2 rounded-lg px-2 py-2 text-[11px] sm:text-xs font-semibold",
                                       desabilitar ? "bg-gray-100 text-gray-400" : "bg-green-600 text-white hover:opacity-90",
                                     ].join(" ")}
                                     onClick={() => setConfirmItem(it)}
@@ -568,14 +531,14 @@ export default function Home() {
                                 ) : (
                                   <button
                                     type="button"
-                                    className="col-span-2 rounded-lg px-2 py-2 text-xs font-semibold bg-green-600 text-white hover:opacity-90"
+                                    className="col-span-2 rounded-lg px-2 py-2 text-[11px] sm:text-xs font-semibold bg-green-600 text-white hover:opacity-90"
                                     onClick={() => {
                                       const v = it.preco_sugerido ?? null;
                                       if (v == null || v <= 0) {
                                         alert("Esse Pix precisa ter um valor sugerido no Supabase.");
                                         return;
                                       }
-                                      confirmarPixDoItem(it, Number(v));
+                                      abrirIdentificacao({ kind: "pix_item", item: it, valor: Number(v) });
                                     }}
                                   >
                                     Confirmar Pix 😊
@@ -583,9 +546,8 @@ export default function Home() {
                                 )}
                               </div>
 
-                              {/* Dica no Pix */}
                               {tab === "pix" && (
-                                <p className="mt-2 text-[11px] text-gray-500">
+                                <p className="mt-2 text-[11px] text-gray-700">
                                   Este Pix continua disponível para outras pessoas.
                                 </p>
                               )}
@@ -608,13 +570,13 @@ export default function Home() {
           <div className="w-full max-w-md rounded-2xl bg-white p-5 shadow-xl">
             <div className="flex items-start justify-between gap-4">
               <div>
-                <h3 className="text-lg font-semibold">Pix</h3>
-                <p className="text-sm text-gray-600">{pixItem.nome}</p>
+                <h3 className="text-lg font-semibold text-gray-900">Pix</h3>
+                <p className="text-sm text-gray-700">{pixItem.nome}</p>
               </div>
 
               <button
                 onClick={() => setPixItem(null)}
-                className="rounded-lg px-3 py-1 text-sm text-gray-600 hover:bg-gray-100"
+                className="rounded-lg px-3 py-1 text-sm text-gray-700 hover:bg-gray-100"
               >
                 Fechar
               </button>
@@ -622,29 +584,26 @@ export default function Home() {
 
             <div className="mt-4 rounded-xl border border-gray-200 bg-gray-50 p-4">
               <p className="text-sm text-gray-700">Valor</p>
-              <p className="mt-1 text-xl font-semibold">{formatBRL(pixItem.preco_sugerido)}</p>
+              <p className="mt-1 text-xl font-semibold text-gray-900">{formatBRL(pixItem.preco_sugerido)}</p>
             </div>
 
             <div className="mt-4 flex flex-col items-center">
               <div className="rounded-xl border border-gray-200 bg-white p-3">
-                <QRCodeCanvas
-                  value={currentEmv(pixItem.preco_sugerido) || "PIX"}
-                  size={window.innerWidth < 420 ? 180 : 220}
-                />
+                <QRCodeCanvas value={currentEmv(pixItem.preco_sugerido) || "PIX"} size={qrSize} />
               </div>
-              <p className="mt-2 text-center text-xs text-gray-500">
+              <p className="mt-2 text-center text-xs text-gray-700">
                 Se o QR não funcionar, use o “copia e cola”.
               </p>
             </div>
 
             <div className="mt-4">
-              <p className="text-sm font-medium text-gray-700">Pix copia e cola</p>
+              <p className="text-sm font-semibold text-gray-900">Pix copia e cola</p>
 
               <div className="mt-2 flex items-center gap-2">
                 <input
                   readOnly
                   value={currentEmv(pixItem.preco_sugerido) || "Defina NEXT_PUBLIC_PIX_EMV no .env.local"}
-                  className="w-full rounded-xl border border-gray-200 bg-white px-3 py-2 text-sm"
+                  className="w-full rounded-xl border border-gray-200 bg-white px-3 py-2 text-sm text-gray-900"
                 />
                 <button
                   onClick={() => copiarTexto(currentEmv(pixItem.preco_sugerido))}
@@ -658,7 +617,7 @@ export default function Home() {
                 </button>
               </div>
 
-              <p className="mt-2 text-xs text-gray-500">
+              <p className="mt-2 text-xs text-gray-700">
                 Depois de fazer o Pix, clique em <b>Confirmar</b>.
               </p>
             </div>
@@ -666,7 +625,7 @@ export default function Home() {
             <div className="mt-5 flex gap-2">
               <button
                 onClick={() => setPixItem(null)}
-                className="w-1/2 rounded-xl border border-gray-200 bg-white px-3 py-3 text-sm font-semibold hover:bg-gray-50"
+                className="w-1/2 rounded-xl border border-gray-200 bg-white px-3 py-3 text-sm font-semibold hover:bg-gray-50 text-gray-900"
               >
                 Voltar
               </button>
@@ -679,22 +638,21 @@ export default function Home() {
                     return;
                   }
 
-                  // Se for o “pix-livre” (card especial), registra como pix livre
                   if (pixItem.id === "pix-livre") {
-                    confirmarPixLivre(Number(v));
+                    abrirIdentificacao({ kind: "pix_livre", valor: Number(v) });
                     setPixItem(null);
                     return;
                   }
 
-                  // Se estiver na aba pix (repetível), registra contribuição sem marcar comprado
+                  // Aba pix / repetível: registra contribuição, não “some”
                   if ((pixItem.aba ?? "lista") === "pix" || pixItem.repetivel) {
-                    confirmarPixDoItem(pixItem, Number(v));
+                    abrirIdentificacao({ kind: "pix_item", item: pixItem, valor: Number(v) });
                     setPixItem(null);
                     return;
                   }
 
-                  // Senão é item normal: fluxo pix que marca comprado
-                  confirmarPixDoItem(pixItem, Number(v));
+                  // Item normal pago via Pix
+                  abrirIdentificacao({ kind: "pix_item", item: pixItem, valor: Number(v) });
                   setPixItem(null);
                 }}
                 className="w-1/2 rounded-xl bg-green-600 px-3 py-3 text-sm font-semibold text-white hover:opacity-90"
@@ -706,21 +664,21 @@ export default function Home() {
         </div>
       )}
 
-      {/* MODAL CONFIRMAR COMPRA (Sim/Cancelar) — somente lista normal */}
+      {/* MODAL CONFIRMAR COMPRA */}
       {confirmItem && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-3 sm:p-4">
           <div className="w-full max-w-sm rounded-2xl bg-white p-5 shadow-xl">
             <div className="flex items-start justify-between gap-4">
               <div>
-                <h3 className="text-lg font-semibold">Confirmar</h3>
-                <p className="text-sm text-gray-600">
+                <h3 className="text-lg font-semibold text-gray-900">Confirmar</h3>
+                <p className="text-sm text-gray-700">
                   Você comprou/fez Pix do item <b>{confirmItem.nome}</b>?
                 </p>
               </div>
 
               <button
                 onClick={() => setConfirmItem(null)}
-                className="rounded-lg px-3 py-1 text-sm text-gray-600 hover:bg-gray-100"
+                className="rounded-lg px-3 py-1 text-sm text-gray-700 hover:bg-gray-100"
               >
                 Fechar
               </button>
@@ -729,7 +687,7 @@ export default function Home() {
             <div className="mt-5 flex gap-2">
               <button
                 onClick={() => setConfirmItem(null)}
-                className="w-1/2 rounded-xl border border-gray-200 bg-white px-3 py-3 text-sm font-semibold hover:bg-gray-50"
+                className="w-1/2 rounded-xl border border-gray-200 bg-white px-3 py-3 text-sm font-semibold hover:bg-gray-50 text-gray-900"
               >
                 Cancelar
               </button>
@@ -737,8 +695,7 @@ export default function Home() {
               <button
                 disabled={confirmLoading}
                 onClick={() => {
-                  // abre identificação
-                  confirmarAcaoPrincipal(confirmItem);
+                  abrirIdentificacao({ kind: "comprar_item", item: confirmItem });
                   setConfirmItem(null);
                 }}
                 className={[
@@ -757,32 +714,32 @@ export default function Home() {
       {identifyOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-3 sm:p-4">
           <div className="w-full max-w-sm rounded-2xl bg-white p-5 shadow-xl">
-            <h3 className="text-lg font-semibold">Deseja se identificar?</h3>
-            <p className="mt-1 text-sm text-gray-600">
-              Se você colocar seu nome, ele vai aparecer no item (quando for um item comprado).
+            <h3 className="text-lg font-semibold text-gray-900">Deseja se identificar?</h3>
+            <p className="mt-1 text-sm text-gray-700">
+              Se você colocar seu nome, ele aparece no item comprado.
             </p>
 
             <div className="mt-4">
-              <label className="text-xs font-medium text-gray-700">Seu nome (opcional)</label>
+              <label className="text-xs font-semibold text-gray-900">Seu nome (opcional)</label>
               <input
                 value={identifyNome}
                 onChange={(e) => setIdentifyNome(e.target.value)}
-                placeholder="Ex: Bianca"
-                className="mt-2 w-full rounded-xl border border-gray-200 bg-white px-3 py-3 text-sm outline-none focus:border-gray-400"
+                placeholder="Ex: Ana"
+                className="mt-2 w-full rounded-xl border border-gray-200 bg-white px-3 py-3 text-sm outline-none focus:border-gray-400 text-gray-900 placeholder:text-gray-500"
               />
             </div>
 
             <div className="mt-5 flex gap-2">
               <button
-                disabled={identifySkipping}
+                disabled={identifySaving}
                 onClick={() => finalizarComNomeOuNao(null)}
-                className="w-1/2 rounded-xl border border-gray-200 bg-white px-3 py-3 text-sm font-semibold hover:bg-gray-50 disabled:opacity-60"
+                className="w-1/2 rounded-xl border border-gray-200 bg-white px-3 py-3 text-sm font-semibold hover:bg-gray-50 text-gray-900 disabled:opacity-60"
               >
                 Não
               </button>
 
               <button
-                disabled={identifySkipping}
+                disabled={identifySaving}
                 onClick={() => {
                   const nome = identifyNome.trim();
                   finalizarComNomeOuNao(nome ? nome : null);
@@ -794,7 +751,7 @@ export default function Home() {
             </div>
           </div>
         </div>
-      )}  
+      )}
     </main>
   );
 }
