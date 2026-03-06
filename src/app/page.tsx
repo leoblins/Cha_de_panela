@@ -407,7 +407,7 @@ export default function Home() {
                 tab === "confirmacao" ? "bg-black text-white" : "text-gray-900 hover:bg-gray-100",
               ].join(" ")}
             >
-              Confirmar Presença/ Localização
+              Presença/ Loc
             </button>
           </div>
         </div>
