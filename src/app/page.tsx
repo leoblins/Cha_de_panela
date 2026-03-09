@@ -13,16 +13,9 @@ type ItemCha = {
   link_compra: string | null;
   imagem_url: string | null;
   status: "disponivel" | "comprado" | string;
-
   comprador_nome?: string | null;
   repetivel?: boolean;
   aba?: "lista" | "pix" | string;
-};
-
-type Confirmacao = {
-  id: string;
-  nome: string;
-  created_at: string;
 };
 
 function formatBRL(v: number | null) {
@@ -30,13 +23,14 @@ function formatBRL(v: number | null) {
   return v.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
 }
 
-/** Pix EMV helpers */
 function formatAmountForPix(v: number) {
   return v.toFixed(2);
 }
+
 function toLen2(n: number) {
   return String(n).padStart(2, "0");
 }
+
 function parseTLV(payload: string) {
   const fields: { tag: string; value: string }[] = [];
   let i = 0;
@@ -49,9 +43,11 @@ function parseTLV(payload: string) {
   }
   return fields;
 }
+
 function buildTLV(fields: { tag: string; value: string }[]) {
   return fields.map((f) => `${f.tag}${toLen2(f.value.length)}${f.value}`).join("");
 }
+
 function crc16ccittFalse(str: string) {
   let crc = 0xffff;
   for (let i = 0; i < str.length; i++) {
@@ -63,6 +59,7 @@ function crc16ccittFalse(str: string) {
   }
   return crc.toString(16).toUpperCase().padStart(4, "0");
 }
+
 function makePixEmvWithAmount(emvBase: string, amount: number) {
   const fields = parseTLV(emvBase);
   const without54and63 = fields.filter((f) => f.tag !== "54" && f.tag !== "63");
@@ -98,23 +95,18 @@ export default function Home() {
 
   const pixEmvBase = process.env.NEXT_PUBLIC_PIX_EMV ?? "";
 
-  // Modal Pix
   const [pixItem, setPixItem] = useState<ItemCha | null>(null);
   const [copiado, setCopiado] = useState(false);
 
-  // Pix valor livre
   const [pixValorLivre, setPixValorLivre] = useState<string>("");
 
-  // Confirmação compra item
   const [confirmItem, setConfirmItem] = useState<ItemCha | null>(null);
   const [confirmLoading, setConfirmLoading] = useState(false);
 
-  // Identificação
   const [identifyOpen, setIdentifyOpen] = useState(false);
   const [identifyNome, setIdentifyNome] = useState("");
   const [identifySaving, setIdentifySaving] = useState(false);
 
-  // QR responsivo
   const [qrSize, setQrSize] = useState(220);
   useEffect(() => {
     const update = () => setQrSize(window.innerWidth < 420 ? 180 : 220);
@@ -130,29 +122,9 @@ export default function Home() {
     | null
   >(null);
 
-  // ✅ CONFIRMAÇÕES (3ª aba)
-  const [confirmacoes, setConfirmacoes] = useState<Confirmacao[]>([]);
   const [confirmNome, setConfirmNome] = useState("");
   const [confirmMsg, setConfirmMsg] = useState<string | null>(null);
   const [confirmSaving, setConfirmSaving] = useState(false);
-  const [confirmLoadingList, setConfirmLoadingList] = useState(false);
-
-  async function carregarConfirmacoes() {
-    setConfirmLoadingList(true);
-    const { data, error } = await supabase
-      .from("confirmacoes_cha")
-      .select("id,nome,created_at")
-      .order("created_at", { ascending: false });
-
-    setConfirmLoadingList(false);
-
-    if (error) {
-      setConfirmMsg("Não consegui carregar as confirmações.");
-      return;
-    }
-
-    setConfirmacoes((data ?? []) as Confirmacao[]);
-  }
 
   async function enviarConfirmacao() {
     const nome = confirmNome.trim();
@@ -179,8 +151,7 @@ export default function Home() {
 
     setConfirmNome("");
     setConfirmMsg("Presença confirmada! ✅ Obrigado 😊");
-    await carregarConfirmacoes();
-    setTimeout(() => setConfirmMsg(null), 2000);
+    setTimeout(() => setConfirmMsg(null), 2500);
   }
 
   async function carregar() {
@@ -208,7 +179,7 @@ export default function Home() {
     setCategoriasAbertas((prev) => {
       if (Object.keys(prev).length > 0) return prev;
       const next: Record<string, boolean> = {};
-      for (const it of rows.filter((r) => (r.aba ?? "lista") === "lista")) next[it.categoria] = false; // fechadas
+      for (const it of rows.filter((r) => (r.aba ?? "lista") === "lista")) next[it.categoria] = false;
       return next;
     });
 
@@ -218,10 +189,6 @@ export default function Home() {
   useEffect(() => {
     carregar();
   }, []);
-
-  useEffect(() => {
-    if (tab === "confirmacao") carregarConfirmacoes();
-  }, [tab]);
 
   const itensDaAba = useMemo(() => {
     return itens.filter((it) => ((it.aba ?? "lista") as "lista" | "pix") === tab);
@@ -358,7 +325,6 @@ export default function Home() {
 
   return (
     <main className="relative min-h-screen">
-      {/* FUNDO */}
       <div
         className="fixed inset-0 -z-10"
         style={{
@@ -371,7 +337,6 @@ export default function Home() {
       />
 
       <div className="mx-auto max-w-5xl px-3 sm:px-4 py-8 sm:py-10">
-        {/* HEADER */}
         <header className="mb-5 sm:mb-8 text-center text-white">
           <h1 className="text-3xl sm:text-4xl font-bold drop-shadow-lg">Chá de Panela 💍</h1>
           <p className="mt-2 text-xs sm:text-sm opacity-90">
@@ -379,7 +344,6 @@ export default function Home() {
           </p>
         </header>
 
-        {/* TABS (3 abas) */}
         <div className="mx-auto mb-4 sm:mb-6 max-w-3xl">
           <div className="grid grid-cols-3 rounded-2xl bg-white/95 p-1 shadow backdrop-blur">
             <button
@@ -407,12 +371,11 @@ export default function Home() {
                 tab === "confirmacao" ? "bg-black text-white" : "text-gray-900 hover:bg-gray-100",
               ].join(" ")}
             >
-              Presença/ Loc
+              Confirmar presença
             </button>
           </div>
         </div>
 
-        {/* BUSCA (só nas abas lista/pix) */}
         {tab !== "confirmacao" && (
           <div className="mx-auto mb-6 sm:mb-8 max-w-3xl">
             <input
@@ -426,10 +389,11 @@ export default function Home() {
 
         {loading && <p className="text-sm text-white/90">Carregando...</p>}
         {erro && (
-          <div className="rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-700">Erro: {erro}</div>
+          <div className="rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-700">
+            Erro: {erro}
+          </div>
         )}
 
-        {/* ✅ ABA 3: CONFIRMAÇÃO */}
         {tab === "confirmacao" && (
           <section className="mx-auto max-w-3xl rounded-2xl bg-white/95 shadow-lg backdrop-blur overflow-hidden">
             <div className="p-5 sm:p-6 border-b border-gray-200">
@@ -439,10 +403,8 @@ export default function Home() {
               </p>
             </div>
 
-            {/* Foto do local */}
             <div className="p-5 sm:p-6">
               <div className="rounded-2xl overflow-hidden border border-gray-200 bg-gray-50">
-                {/* Coloque sua foto em public/local.jpg */}
                 <img
                   src="/local.jpg"
                   alt="Local do evento"
@@ -450,16 +412,13 @@ export default function Home() {
                 />
               </div>
 
-              {/* Endereço */}
               <div className="mt-4 rounded-2xl border border-gray-200 bg-white p-4">
                 <p className="text-sm font-semibold text-gray-900">📍 Sede de Lazer Sind-Justiça</p>
                 <p className="mt-1 text-sm text-gray-700">
-                  {/* TROQUE AQUI PELO SEU ENDEREÇO */}
                   Est. Muriqui Pequeno, 25 - Vila Progresso, Niterói - RJ
                 </p>
               </div>
 
-              {/* Form confirmar */}
               <div className="mt-4 rounded-2xl border border-gray-200 bg-white p-4">
                 <p className="text-sm font-semibold text-gray-900">Coloque seu nome</p>
                 <div className="mt-3 flex flex-col sm:flex-row gap-2">
@@ -486,46 +445,19 @@ export default function Home() {
                 )}
               </div>
 
-              {/* Lista confirmados */}
               <div className="mt-4 rounded-2xl border border-gray-200 bg-white p-4">
-                <div className="flex items-center justify-between">
-                  <p className="text-sm font-semibold text-gray-900">
-                    Confirmados ({confirmacoes.length})
-                  </p>
-                  <button
-                    onClick={carregarConfirmacoes}
-                    className="text-sm font-semibold text-gray-700 hover:underline"
-                  >
-                    Atualizar
-                  </button>
-                </div>
-
-                {confirmLoadingList ? (
-                  <p className="mt-3 text-sm text-gray-700">Carregando...</p>
-                ) : confirmacoes.length === 0 ? (
-                  <p className="mt-3 text-sm text-gray-700">Ainda ninguém confirmou.</p>
-                ) : (
-                  <div className="mt-3 grid grid-cols-1 sm:grid-cols-2 gap-2">
-                    {confirmacoes.map((c) => (
-                      <div
-                        key={c.id}
-                        className="rounded-xl border border-gray-200 bg-gray-50 px-3 py-2 text-sm text-gray-900"
-                      >
-                        {c.nome}
-                      </div>
-                    ))}
-                  </div>
-                )}
-
+               
+                <p className="mt-2 text-sm text-gray-700">
+                  
+                </p>
                 <p className="mt-3 text-xs text-gray-600">
-                  Obs: se alguém escrever errado ou não for mais, nos avise que ajustamos/removemos depois 😊
+                  Caso precise corrigir algo depois, ou não vá conseguir ir, é só nos avisar.
                 </p>
               </div>
             </div>
           </section>
         )}
 
-        {/* ABA PIX LIVRE + LISTA / PIX (mantém seu comportamento atual) */}
         {tab === "pix" && (
           <section className="mb-6 rounded-2xl bg-white/95 shadow-lg backdrop-blur">
             <div className="px-5 py-4 border-b border-gray-200">
@@ -574,7 +506,6 @@ export default function Home() {
           </section>
         )}
 
-        {/* CATEGORIAS (só em lista/pix) */}
         {tab !== "confirmacao" && (
           <div className="space-y-6">
             {[...porCategoria.entries()].map(([cat, lista]) => {
@@ -758,7 +689,6 @@ export default function Home() {
         )}
       </div>
 
-      {/* MODAL PIX */}
       {pixItem && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-3 sm:p-4">
           <div className="w-full max-w-md rounded-2xl bg-white p-5 shadow-xl">
@@ -856,7 +786,6 @@ export default function Home() {
         </div>
       )}
 
-      {/* MODAL CONFIRMAR COMPRA */}
       {confirmItem && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-3 sm:p-4">
           <div className="w-full max-w-sm rounded-2xl bg-white p-5 shadow-xl">
@@ -902,7 +831,6 @@ export default function Home() {
         </div>
       )}
 
-      {/* MODAL IDENTIFICAÇÃO */}
       {identifyOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-3 sm:p-4">
           <div className="w-full max-w-sm rounded-2xl bg-white p-5 shadow-xl">
