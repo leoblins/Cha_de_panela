@@ -413,9 +413,9 @@ export default function Home() {
               </div>
 
               <div className="mt-4 rounded-2xl border border-gray-200 bg-white p-4">
-                <p className="text-sm font-semibold text-gray-900">📍 Sede de Lazer Sind-Justiça</p>
+                <p className="text-sm font-semibold text-gray-900">📍 Sede Nome da Sede</p>
                 <p className="mt-1 text-sm text-gray-700">
-                  Est. Muriqui Pequeno, 25 - Vila Progresso, Niterói - RJ
+                  Rua ABC 123, Rio de Janeiro - RJ
                 </p>
               </div>
 
@@ -474,7 +474,7 @@ export default function Home() {
                   onChange={(e) => setPixValorLivre(e.target.value)}
                   inputMode="decimal"
                   placeholder="Ex: 35.00"
-                  className="w-full sm:w-56 rounded-xl border border-gray-200 bg-white px-3 py-3 text-sm outline-none focus:border-gray-400 text-gray-900 placeholder:text-gray-500"
+                  className="w-full sm:w-56 rounded-xl border borderf-gray-200 bg-white px-3 py-3 text-sm outline-none focus:border-gray-400 text-gray-900 placeholder:text-gray-500"
                 />
                 <button
                   onClick={() => {
